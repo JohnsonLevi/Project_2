@@ -7,6 +7,14 @@
 #include "shell_builtins.h"
 #include "parser.h"
 
+#include <sys/types.h>
+#include <sys/wait.h>
+
+#include <sys/types.h>
+#include <unistd.h>
+
+#include <unistd.h>
+
 /**
  * dispatch_external_command() - run a pipeline of commands
  *
@@ -50,8 +58,27 @@ static int dispatch_external_command(struct command *pipeline)
 	 *
 	 * Good luck!
 	 */
-	fprintf(stderr, "TODO: handle external commands\n");
-	return -1;
+	//split up pipeline data 
+	
+
+	int var;
+	pid_t pid = fork();//
+	if(pid == 0){
+		
+		int status = execvp(pipeline->argv[0],pipeline->argv);
+		if(status == -1){
+			fprintf(stderr, "Not a real command\n");			
+			exit(1);
+		}
+	}
+	waitpid(pid, &var, 0);
+	
+	
+
+	//fprintf(stdree, getpid(pid));
+
+	//fprintf(stderr, "TODO: handle external commands\n");
+	return var;
 }
 
 /**
