@@ -15,6 +15,10 @@
 
 #include <unistd.h>
 
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
 /**
  * dispatch_external_command() - run a pipeline of commands
  *
@@ -59,12 +63,19 @@ static int dispatch_external_command(struct command *pipeline)
 	 * Good luck!
 	 */
 	//split up pipeline data 
-	
+	int fd;
+	if(pipeline->output_type == COMMAND_OUTPUT_FILE_TRUNCATE){
+		fd = open(pipeline->output_filename, O_CREAT|O_WRONLY|O_TRUNC, 0666);
+		//if(fd == NULL) ///need to add a check to see if open failed
+
+		//dup2(fd, STDOUT_FILENO);	
+	}
+
 
 	int var;
 	pid_t pid = fork();//
 	if(pid == 0){
-		
+		dup2(fd, STDOUT_FILENO);
 		int status = execvp(pipeline->argv[0],pipeline->argv);
 		if(status == -1){
 			fprintf(stderr, "Not a real command\n");			
@@ -72,6 +83,12 @@ static int dispatch_external_command(struct command *pipeline)
 		}
 	}
 	waitpid(pid, &var, 0);
+	if(pipeline->output_type == COMMAND_OUTPUT_FILE_TRUNCATE){
+		close(fd);
+	}
+
+
+
 	
 	
 
@@ -80,6 +97,10 @@ static int dispatch_external_command(struct command *pipeline)
 	//fprintf(stderr, "TODO: handle external commands\n");
 	return var;
 }
+
+// void setup() {
+
+// }
 
 /**
  * dispatch_parsed_command() - run a command after it has been parsed
