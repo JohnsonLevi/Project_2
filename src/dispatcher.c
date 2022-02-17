@@ -62,14 +62,10 @@ static int dispatch_external_command(struct command *pipeline)
 	 *
 	 * Good luck!
 	 */
-	//split up pipeline data 
-	int fd;
-	if(pipeline->output_type == COMMAND_OUTPUT_FILE_TRUNCATE){
-		fd = open(pipeline->output_filename, O_CREAT|O_WRONLY|O_TRUNC, 0666);
-		//if(fd == NULL) ///need to add a check to see if open failed
+	//split up pipeline data //need to put all of this inside a recursive function basically then it will recall itself if 
+	//output_type is equal to pipe. 
+	int fd = setup();
 
-		//dup2(fd, STDOUT_FILENO);	
-	}
 
 
 	int var;
@@ -87,20 +83,28 @@ static int dispatch_external_command(struct command *pipeline)
 		close(fd);
 	}
 
-
-
-	
-	
-
 	//fprintf(stdree, getpid(pid));
 
 	//fprintf(stderr, "TODO: handle external commands\n");
 	return var;
 }
 
-// void setup() {
+int setup() {
+	int fd;
+	if(pipeline->output_type == COMMAND_OUTPUT_FILE_TRUNCATE){
+		fd = open(pipeline->output_filename, O_CREAT|O_WRONLY|O_TRUNC, S_IWUSR|S_IXUSR);//need to figure out exactly how works but think this is right
+		//if(fd == NULL) ///need to add a check to see if open failed
 
-// }
+		//dup2(fd, STDOUT_FILENO);	
+	}
+	
+	return fd;
+
+}
+
+void ioRedirect(int output, int input){//will do the dup2's for the child where you exicute it
+
+}
 
 /**
  * dispatch_parsed_command() - run a command after it has been parsed
