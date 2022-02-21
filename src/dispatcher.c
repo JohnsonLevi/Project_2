@@ -19,6 +19,9 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+int outputSetup(struct command *pipeline);
+int inputSetup(struct command *pipeline);
+int recur_fun(struct command *pipeline);
 /**
  * dispatch_external_command() - run a pipeline of commands
  *
@@ -64,13 +67,47 @@ static int dispatch_external_command(struct command *pipeline)
 	 */
 	//split up pipeline data //need to put all of this inside a recursive function basically then it will recall itself if 
 	//output_type is equal to pipe. 
-	int fd = setup();
+
+	
+
+	
+	// int fd = outputSetup(pipeline);
+	// int id = inputSetup(pipeline);
+
+	int var = recur_fun(pipeline);
+	// pid_t pid = fork();//
+	// if(pid == 0){
+	// 	dup2(id, STDIN_FILENO);
+	// 	dup2(fd, STDOUT_FILENO);
+	// 	int status = execvp(pipeline->argv[0],pipeline->argv);
+	// 	if(status == -1){
+	// 		fprintf(stderr, "Not a real command\n");			
+	// 		exit(1);
+	// 	}
+	// }
+	// waitpid(pid, &var, 0);
+	
+	// if(pipeline->output_type == COMMAND_OUTPUT_FILE_TRUNCATE){
+	// 	close(fd);
+	// }
+
+	//fprintf(stdree, getpid(pid));
+
+	//fprintf(stderr, "TODO: handle external commands\n");
+	return var;
+}
+
+//NEED TO CHECK WHILE DOING
 
 
+int recur_fun(struct command *pipeline) {
+	int fd = outputSetup(pipeline);
+	int id = inputSetup(pipeline);
 
 	int var;
 	pid_t pid = fork();//
 	if(pid == 0){
+		dup2(id, STDIN_FILENO);
 		dup2(fd, STDOUT_FILENO);
 		int status = execvp(pipeline->argv[0],pipeline->argv);
 		if(status == -1){
@@ -79,32 +116,51 @@ static int dispatch_external_command(struct command *pipeline)
 		}
 	}
 	waitpid(pid, &var, 0);
-	if(pipeline->output_type == COMMAND_OUTPUT_FILE_TRUNCATE){
-		close(fd);
-	}
+	
+	close(fd);
+	close(id);
+	
 
-	//fprintf(stdree, getpid(pid));
-
-	//fprintf(stderr, "TODO: handle external commands\n");
 	return var;
+
 }
 
-int setup() {
+int outputSetup(struct command *pipeline) {
 	int fd;
 	if(pipeline->output_type == COMMAND_OUTPUT_FILE_TRUNCATE){
 		fd = open(pipeline->output_filename, O_CREAT|O_WRONLY|O_TRUNC, S_IWUSR|S_IXUSR);//need to figure out exactly how works but think this is right
 		//if(fd == NULL) ///need to add a check to see if open failed
 
 		//dup2(fd, STDOUT_FILENO);	
+	}else if(pipeline->output_type == COMMAND_OUTPUT_FILE_APPEND){
+		fd = open(pipeline->output_filename, O_CREAT|O_WRONLY|O_APPEND, S_IWUSR|S_IXUSR);
+
+	// }else if(pipeline->output_type == COMMAND_OUTPUT_PIPE){
+	// 	//fd = current_pipe[1]
+
+	// 
+	}else{
+		fd = STDOUT_FILENO;
 	}
 	
 	return fd;
 
 }
 
-void ioRedirect(int output, int input){//will do the dup2's for the child where you exicute it
-
+int inputSetup(struct command *pipeline) {
+	int id;
+	if(pipeline->input_filename != NULL){
+		id = open(pipeline->input_filename, O_RDONLY, S_IWUSR|S_IXUSR);
+	}else{
+		id = STDIN_FILENO; 
+	}
+	return id;
 }
+
+
+// void ioRedirect(int output, int input){//will do the dup2's for the child where you excute it
+// 	dup2(input, output);
+// }
 
 /**
  * dispatch_parsed_command() - run a command after it has been parsed
