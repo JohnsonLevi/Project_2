@@ -117,6 +117,7 @@ int recur_fun(struct command *pipeline, int *previousPipe, bool isFirst) {
 			dup2(fd[0], STDOUT_FILENO);
 		}else{
 			dup2(id[0], STDIN_FILENO);
+			close(id[0]);
 			dup2(fd[1], STDOUT_FILENO);
 		}
 		int status = execvp(pipeline->argv[0],pipeline->argv);
@@ -125,8 +126,10 @@ int recur_fun(struct command *pipeline, int *previousPipe, bool isFirst) {
 			exit(1);
 		}
 	}
-	close(fd[1]);
 	waitpid(pid, &var, 0);
+	if(pipeline->output_type == COMMAND_OUTPUT_PIPE || !isFirst){
+		close(fd[1]);
+	}
 	if(WIFEXITED(var) == 0){
 		if(WEXITSTATUS(var) != 0){
 			return -1;
