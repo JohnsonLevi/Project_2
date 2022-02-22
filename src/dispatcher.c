@@ -19,9 +19,11 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-int outputSetup(struct command *pipeline);
-int inputSetup(struct command *pipeline);
-int recur_fun(struct command *pipeline);
+#define bool _Bool
+
+int *outputSetup(struct command *pipeline);
+int *inputSetup(struct command *pipeline, int *previousPipe, bool isFirst);
+int recur_fun(struct command *pipeline, int *previousPipe, bool isFirst);
 /**
  * dispatch_external_command() - run a pipeline of commands
  *
@@ -70,11 +72,11 @@ static int dispatch_external_command(struct command *pipeline)
 
 	
 
-	
+	int var = recur_fun(pipeline, NULL, true);
+
 	// int fd = outputSetup(pipeline);
 	// int id = inputSetup(pipeline);
 
-	int var = recur_fun(pipeline);
 	// pid_t pid = fork();//
 	// if(pid == 0){
 	// 	dup2(id, STDIN_FILENO);
@@ -87,9 +89,12 @@ static int dispatch_external_command(struct command *pipeline)
 	// }
 	// waitpid(pid, &var, 0);
 	
-	// if(pipeline->output_type == COMMAND_OUTPUT_FILE_TRUNCATE){
+	// if(pipeline->output_type == COMMAND_OUTPUT_FILE_TRUNCATE || pipeline->output_type == COMMAND_OUTPUT_FILE_APPEND){
 	// 	close(fd);
 	// }
+	// if(pipeline->input_filename != NULL){
+	// 	close(id);
+	// } 
 
 	//fprintf(stdree, getpid(pid));
 
@@ -100,62 +105,94 @@ static int dispatch_external_command(struct command *pipeline)
 //NEED TO CHECK WHILE DOING
 
 
-int recur_fun(struct command *pipeline) {
-	int fd = outputSetup(pipeline);
-	int id = inputSetup(pipeline);
+int recur_fun(struct command *pipeline, int *previousPipe, bool isFirst) {
+	int	*fd = outputSetup(pipeline);
+	int *id = inputSetup(pipeline, previousPipe, isFirst);
 
 	int var;
 	pid_t pid = fork();//
 	if(pid == 0){
-		dup2(id, STDIN_FILENO);
-		dup2(fd, STDOUT_FILENO);
+		if(pipeline->output_type != COMMAND_OUTPUT_PIPE){
+			dup2(id[0], STDIN_FILENO);
+			dup2(fd[0], STDOUT_FILENO);
+		}else{
+			dup2(id[0], STDIN_FILENO);
+			dup2(fd[1], STDOUT_FILENO);
+		}
 		int status = execvp(pipeline->argv[0],pipeline->argv);
 		if(status == -1){
 			fprintf(stderr, "Not a real command\n");			
 			exit(1);
 		}
 	}
+	close(fd[1]);
 	waitpid(pid, &var, 0);
+	if(WIFEXITED(var) == 0){
+		if(WEXITSTATUS(var) != 0){
+			return -1;
+		}
+	}
 	
-	close(fd);
-	close(id);
-	
+	if(pipeline->output_type == COMMAND_OUTPUT_FILE_TRUNCATE || pipeline->output_type == COMMAND_OUTPUT_FILE_APPEND){
+		close(*fd);
+	}
+	if(pipeline->input_filename != NULL){
+		close(*id);
+	} 
 
+	if(pipeline->output_type == COMMAND_OUTPUT_PIPE){
+		if(isFirst == true){
+			isFirst = false;
+		}
+		//close(fd[1]);
+		var = recur_fun(pipeline->pipe_to, fd, isFirst);
+		close(*fd);
+	}
+	
 	return var;
 
 }
 
-int outputSetup(struct command *pipeline) {
-	int fd;
+int *outputSetup(struct command *pipeline) {
+	static int fd[2];
 	if(pipeline->output_type == COMMAND_OUTPUT_FILE_TRUNCATE){
-		fd = open(pipeline->output_filename, O_CREAT|O_WRONLY|O_TRUNC, S_IWUSR|S_IXUSR);//need to figure out exactly how works but think this is right
+		fd[0] = open(pipeline->output_filename, O_CREAT|O_WRONLY|O_TRUNC, S_IWUSR|S_IXUSR);//need to figure out exactly how works but think this is right
 		//if(fd == NULL) ///need to add a check to see if open failed
 
 		//dup2(fd, STDOUT_FILENO);	
 	}else if(pipeline->output_type == COMMAND_OUTPUT_FILE_APPEND){
-		fd = open(pipeline->output_filename, O_CREAT|O_WRONLY|O_APPEND, S_IWUSR|S_IXUSR);
+		fd[0] = open(pipeline->output_filename, O_CREAT|O_WRONLY|O_APPEND, S_IWUSR|S_IXUSR);
 
-	// }else if(pipeline->output_type == COMMAND_OUTPUT_PIPE){
-	// 	//fd = current_pipe[1]
+	}else if(pipeline->output_type == COMMAND_OUTPUT_PIPE){
+		if(pipe(fd) < 0){
+			fprintf(stderr, "pipe error");
 
-	// 
+		}
+		//close(fd[0]); bad
+
+
+	
 	}else{
-		fd = STDOUT_FILENO;
+		fd[0] = STDOUT_FILENO;
 	}
 	
 	return fd;
 
 }
 
-int inputSetup(struct command *pipeline) {
-	int id;
+int *inputSetup(struct command *pipeline, int* previousPipe, bool isFirst) {
+	static int id[2];
 	if(pipeline->input_filename != NULL){
-		id = open(pipeline->input_filename, O_RDONLY, S_IWUSR|S_IXUSR);
+		id[0] = open(pipeline->input_filename, O_RDONLY, S_IWUSR|S_IXUSR);
+	}else if(!isFirst){
+		id[0] = previousPipe[0];
+		id[1] = previousPipe[1]; //dont know if this works tbh gonna need to ask 
 	}else{
-		id = STDIN_FILENO; 
+		id[0] = STDIN_FILENO; 
 	}
 	return id;
 }
+
 
 
 // void ioRedirect(int output, int input){//will do the dup2's for the child where you excute it
