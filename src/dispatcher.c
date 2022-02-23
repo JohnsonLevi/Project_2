@@ -132,9 +132,9 @@ int recur_fun(struct command *pipeline, int *previousPipe, bool isFirst) {
 	if(pipeline->output_type == COMMAND_OUTPUT_PIPE){
 		close(fd[1]);
 	}
-	if(!isFirst){
-		close(id);
-	}
+	// if(!isFirst){
+	// 	close(id);
+	// }
 	if(WIFEXITED(var) == 0){
 		if(WEXITSTATUS(var) != 0){
 			return -1;
