@@ -22,8 +22,8 @@
 #define bool _Bool
 
 int *outputSetup(struct command *pipeline);
-int inputSetup(struct command *pipeline, int *previousPipe, bool isFirst);
-int recur_fun(struct command *pipeline, int *previousPipe, bool isFirst);
+int inputSetup(struct command *pipeline, int previousPipe, bool isFirst);
+int recur_fun(struct command *pipeline, int previousPipe, bool isFirst);
 /**
  * dispatch_external_command() - run a pipeline of commands
  *
@@ -72,7 +72,7 @@ static int dispatch_external_command(struct command *pipeline)
 
 	
 
-	int var = recur_fun(pipeline, NULL, true);
+	int var = recur_fun(pipeline, -1, true);
 
 	// int fd = outputSetup(pipeline);
 	// int id = inputSetup(pipeline);
@@ -105,36 +105,73 @@ static int dispatch_external_command(struct command *pipeline)
 //NEED TO CHECK WHILE DOING
 
 
-int recur_fun(struct command *pipeline, int *previousPipe, bool isFirst) {
-	int	*fd = outputSetup(pipeline);
+int recur_fun(struct command *pipeline, int previousPipe, bool isFirst) {
+
+	//int	*fd = outputSetup(pipeline);
+	int fd[2];
+	if(pipeline->output_type == COMMAND_OUTPUT_FILE_TRUNCATE){
+		fd[0] = open(pipeline->output_filename, O_CREAT|O_WRONLY|O_TRUNC, S_IRWXU); //S_IWUSR|S_IXUSR);//need to figure out exactly how works but think this is right
+		if(fd[0] == -1){///need to add a check to see if open failed
+			fprintf(stderr, "failed to open file truncate\n");
+		} 
+
+		//dup2(fd, STDOUT_FILENO);	
+	}else if(pipeline->output_type == COMMAND_OUTPUT_FILE_APPEND){
+		fd[0] = open(pipeline->output_filename, O_CREAT|O_WRONLY|O_APPEND, S_IRWXU);// S_IWUSR|S_IXUSR);
+		if(fd[0] == -1){
+			fprintf(stderr, "failed to open file append\n");
+		}
+
+	 }else if(pipeline->output_type == COMMAND_OUTPUT_PIPE){
+		if(pipe(fd) < 0){
+			fprintf(stderr, "pipe error\n");
+
+		}
+	
+	}else{
+		fd[0] = STDOUT_FILENO;
+	}
+
 	int id = inputSetup(pipeline, previousPipe, isFirst);
 
 	int var;
+	if(id == -1){
+		if(pipeline->output_type == COMMAND_OUTPUT_PIPE){
+			var = recur_fun(pipeline->pipe_to, -1, true);
+		}else{
+			return -1;
+		}
+	}else{
+
+
+
 	pid_t pid = fork();//
 	if(pid == 0){
 		if(pipeline->output_type != COMMAND_OUTPUT_PIPE){
-			dup2(id, STDIN_FILENO);
-			close(id);
+			if(id != -1){
+				dup2(id, STDIN_FILENO);
+			}
 			dup2(fd[0], STDOUT_FILENO);
-			close(fd[0]);
 		}else{
+			close(fd[0]);
 			dup2(id, STDIN_FILENO);
-			close(id);
 			dup2(fd[1], STDOUT_FILENO);
 		}
 		int status = execvp(pipeline->argv[0],pipeline->argv);
 		if(status == -1){
 			fprintf(stderr, "Not a real command\n");			
-			exit(1);
+			exit(-1);
 		}
 	}
-	waitpid(pid, &var, 0);
+	
+	if(!isFirst){
+		close(id);
+	}
 	if(pipeline->output_type == COMMAND_OUTPUT_PIPE){
 		close(fd[1]);
 	}
-	// if(!isFirst){
-	// 	close(id);
-	// }
+	waitpid(pid, &var, 0);
+
 	if(WIFEXITED(var) == 0){
 		if(WEXITSTATUS(var) != 0){
 			return -1;
@@ -149,12 +186,13 @@ int recur_fun(struct command *pipeline, int *previousPipe, bool isFirst) {
 	} 
 
 	if(pipeline->output_type == COMMAND_OUTPUT_PIPE){
-		if(isFirst == true){
-			isFirst = false;
-		}
+		// if(isFirst == true){
+		// 	isFirst = false;
+		// }
 		//close(fd[1]);
-		var = recur_fun(pipeline->pipe_to, fd, isFirst);
-		close(*fd);//maybe thats right idk tbh
+		var = recur_fun(pipeline->pipe_to, fd[0], false);
+		//close(*fd);//maybe thats right idk tbh
+	}
 	}
 	
 	return var;
@@ -171,9 +209,9 @@ int *outputSetup(struct command *pipeline) {
 	}else if(pipeline->output_type == COMMAND_OUTPUT_FILE_APPEND){
 		fd[0] = open(pipeline->output_filename, O_CREAT|O_WRONLY|O_APPEND, S_IRWXU);// S_IWUSR|S_IXUSR);
 
-	}else if(pipeline->output_type == COMMAND_OUTPUT_PIPE){
+	 }else if(pipeline->output_type == COMMAND_OUTPUT_PIPE){
 		if(pipe(fd) < 0){
-			fprintf(stderr, "pipe error");
+			fprintf(stderr, "pipe error\n");
 
 		}
 		//close(fd[0]); bad
@@ -186,12 +224,16 @@ int *outputSetup(struct command *pipeline) {
 
 }
 
-int inputSetup(struct command *pipeline, int* previousPipe, bool isFirst) {
-	static int id;
+int inputSetup(struct command *pipeline, int previousPipe, bool isFirst) {
+	int id;
 	if(pipeline->input_filename != NULL){
 		id = open(pipeline->input_filename, O_RDONLY, S_IWUSR|S_IXUSR);
+		if(id == -1){
+			fprintf(stderr, "input file does not exist\n");
+		}
+
 	}else if(!isFirst){
-		id = previousPipe[0]; //dont know if this works tbh gonna need to ask 
+		id = previousPipe; //dont know if this works tbh gonna need to ask 
 		//id[1] = previousPipe[1]; //maybe ask if we even need to set both because we tenically have closed
 								 //the write end of the pipe.
 	}else{
@@ -200,11 +242,6 @@ int inputSetup(struct command *pipeline, int* previousPipe, bool isFirst) {
 	return id;
 }
 
-
-
-// void ioRedirect(int output, int input){//will do the dup2's for the child where you excute it
-// 	dup2(input, output);
-// }
 
 /**
  * dispatch_parsed_command() - run a command after it has been parsed
