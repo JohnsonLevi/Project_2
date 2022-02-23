@@ -22,7 +22,7 @@
 #define bool _Bool
 
 int *outputSetup(struct command *pipeline);
-int *inputSetup(struct command *pipeline, int *previousPipe, bool isFirst);
+int inputSetup(struct command *pipeline, int *previousPipe, bool isFirst);
 int recur_fun(struct command *pipeline, int *previousPipe, bool isFirst);
 /**
  * dispatch_external_command() - run a pipeline of commands
@@ -107,17 +107,19 @@ static int dispatch_external_command(struct command *pipeline)
 
 int recur_fun(struct command *pipeline, int *previousPipe, bool isFirst) {
 	int	*fd = outputSetup(pipeline);
-	int *id = inputSetup(pipeline, previousPipe, isFirst);
+	int id = inputSetup(pipeline, previousPipe, isFirst);
 
 	int var;
 	pid_t pid = fork();//
 	if(pid == 0){
 		if(pipeline->output_type != COMMAND_OUTPUT_PIPE){
-			dup2(id[0], STDIN_FILENO);
+			dup2(id, STDIN_FILENO);
+			close(id);
 			dup2(fd[0], STDOUT_FILENO);
+			close(fd[0]);
 		}else{
-			dup2(id[0], STDIN_FILENO);
-			close(id[0]);
+			dup2(id, STDIN_FILENO);
+			close(id);
 			dup2(fd[1], STDOUT_FILENO);
 		}
 		int status = execvp(pipeline->argv[0],pipeline->argv);
@@ -127,8 +129,11 @@ int recur_fun(struct command *pipeline, int *previousPipe, bool isFirst) {
 		}
 	}
 	waitpid(pid, &var, 0);
-	if(pipeline->output_type == COMMAND_OUTPUT_PIPE || !isFirst){
+	if(pipeline->output_type == COMMAND_OUTPUT_PIPE){
 		close(fd[1]);
+	}
+	if(!isFirst){
+		close(id);
 	}
 	if(WIFEXITED(var) == 0){
 		if(WEXITSTATUS(var) != 0){
@@ -140,7 +145,7 @@ int recur_fun(struct command *pipeline, int *previousPipe, bool isFirst) {
 		close(*fd);
 	}
 	if(pipeline->input_filename != NULL){
-		close(*id);
+		close(id);
 	} 
 
 	if(pipeline->output_type == COMMAND_OUTPUT_PIPE){
@@ -149,7 +154,7 @@ int recur_fun(struct command *pipeline, int *previousPipe, bool isFirst) {
 		}
 		//close(fd[1]);
 		var = recur_fun(pipeline->pipe_to, fd, isFirst);
-		close(*fd);
+		close(*fd);//maybe thats right idk tbh
 	}
 	
 	return var;
@@ -159,12 +164,12 @@ int recur_fun(struct command *pipeline, int *previousPipe, bool isFirst) {
 int *outputSetup(struct command *pipeline) {
 	static int fd[2];
 	if(pipeline->output_type == COMMAND_OUTPUT_FILE_TRUNCATE){
-		fd[0] = open(pipeline->output_filename, O_CREAT|O_WRONLY|O_TRUNC, S_IWUSR|S_IXUSR);//need to figure out exactly how works but think this is right
+		fd[0] = open(pipeline->output_filename, O_CREAT|O_WRONLY|O_TRUNC, S_IRWXU); //S_IWUSR|S_IXUSR);//need to figure out exactly how works but think this is right
 		//if(fd == NULL) ///need to add a check to see if open failed
 
 		//dup2(fd, STDOUT_FILENO);	
 	}else if(pipeline->output_type == COMMAND_OUTPUT_FILE_APPEND){
-		fd[0] = open(pipeline->output_filename, O_CREAT|O_WRONLY|O_APPEND, S_IWUSR|S_IXUSR);
+		fd[0] = open(pipeline->output_filename, O_CREAT|O_WRONLY|O_APPEND, S_IRWXU);// S_IWUSR|S_IXUSR);
 
 	}else if(pipeline->output_type == COMMAND_OUTPUT_PIPE){
 		if(pipe(fd) < 0){
@@ -172,8 +177,6 @@ int *outputSetup(struct command *pipeline) {
 
 		}
 		//close(fd[0]); bad
-
-
 	
 	}else{
 		fd[0] = STDOUT_FILENO;
@@ -183,15 +186,16 @@ int *outputSetup(struct command *pipeline) {
 
 }
 
-int *inputSetup(struct command *pipeline, int* previousPipe, bool isFirst) {
-	static int id[2];
+int inputSetup(struct command *pipeline, int* previousPipe, bool isFirst) {
+	static int id;
 	if(pipeline->input_filename != NULL){
-		id[0] = open(pipeline->input_filename, O_RDONLY, S_IWUSR|S_IXUSR);
+		id = open(pipeline->input_filename, O_RDONLY, S_IWUSR|S_IXUSR);
 	}else if(!isFirst){
-		id[0] = previousPipe[0];
-		id[1] = previousPipe[1]; //dont know if this works tbh gonna need to ask 
+		id = previousPipe[0]; //dont know if this works tbh gonna need to ask 
+		//id[1] = previousPipe[1]; //maybe ask if we even need to set both because we tenically have closed
+								 //the write end of the pipe.
 	}else{
-		id[0] = STDIN_FILENO; 
+		id = STDIN_FILENO; 
 	}
 	return id;
 }
